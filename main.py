@@ -15,7 +15,6 @@ height = int(video.get(cv2.CAP_PROP_FRAME_HEIGHT))
 canvas = np.ones((height, width, 3), dtype="uint8") * 255
 
 prev_x, prev_y = None, None
-lines = []
 
 root = tk.Tk()
 root.title("Hand Drawing Canvas")
@@ -37,7 +36,7 @@ def update_canvas():
     canvas_label.after(10, update_canvas)
 
 def video_stream():
-    global prev_x, prev_y, lines, canvas
+    global prev_x, prev_y, canvas
 
     with mp_hand.Hands(min_detection_confidence=0.5, min_tracking_confidence=0.5) as hands:
         while True:
@@ -51,51 +50,61 @@ def video_stream():
                 hand_landmark = results.multi_hand_landmarks[0]
                 mp_draw.draw_landmarks(frame, hand_landmark, mp_hand.HAND_CONNECTIONS)
 
+                landmark_3_horizontal = int(hand_landmark.landmark[3].x * frame.shape[1])
+                landmark_4_horizontal = int(hand_landmark.landmark[4].x * frame.shape[1])
+                landmark_5_horizontal = int(hand_landmark.landmark[5].x * frame.shape[1])
+                landmark_7_vertical = int(hand_landmark.landmark[7].y * frame.shape[0])
                 landmark_8_horizontal = int(hand_landmark.landmark[8].x * frame.shape[1])
                 landmark_8_vertical = int(hand_landmark.landmark[8].y * frame.shape[0])
-                landmark_4_vertical = int(hand_landmark.landmark[4].y * frame.shape[0])
-                landmark_7_vertical = int(hand_landmark.landmark[7].y * frame.shape[0])
                 landmark_11_vertical = int(hand_landmark.landmark[11].y * frame.shape[0])
                 landmark_12_vertical = int(hand_landmark.landmark[12].y * frame.shape[0])
                 landmark_15_vertical = int(hand_landmark.landmark[15].y * frame.shape[0])
                 landmark_16_vertical = int(hand_landmark.landmark[16].y * frame.shape[0])
+                landmark_17_horizontal = int(hand_landmark.landmark[17].x * frame.shape[1])
                 landmark_19_vertical = int(hand_landmark.landmark[19].y * frame.shape[0])
                 landmark_20_vertical = int(hand_landmark.landmark[20].y * frame.shape[0])
 
+                erasing_gesture = (
+                    landmark_8_vertical < landmark_7_vertical
+                    and landmark_12_vertical < landmark_11_vertical
+                    and landmark_16_vertical < landmark_15_vertical
+                    and landmark_20_vertical < landmark_19_vertical
+                )
+
+                writing_gesture = (
+                    (
+                        (
+                            landmark_5_horizontal < landmark_17_horizontal
+                            and landmark_3_horizontal < landmark_4_horizontal
+                        )
+                        or (
+                            landmark_17_horizontal < landmark_5_horizontal
+                            and landmark_4_horizontal < landmark_3_horizontal
+                        )
+                    )
+                    and landmark_8_vertical < landmark_7_vertical
+                    and not erasing_gesture
+                )
+
                 cursor_label.place(x=landmark_8_horizontal, y=landmark_8_vertical)
 
-                index_finger_extended = (
-                    landmark_4_vertical < landmark_11_vertical and
-                    landmark_8_vertical < landmark_11_vertical
-                )
-
-                fingers_extended = (
-                    landmark_8_vertical < landmark_7_vertical and
-                    landmark_12_vertical < landmark_11_vertical and
-                    landmark_16_vertical < landmark_15_vertical and
-                    landmark_20_vertical < landmark_19_vertical
-                )
-
-                if index_finger_extended:
+                if writing_gesture:
                     global prev_x, prev_y
                     if prev_x is not None and prev_y is not None:
                         cv2.line(canvas, (prev_x, prev_y), (landmark_8_horizontal, landmark_8_vertical), (0, 0, 0), 5)
-                        lines.append(((prev_x, prev_y), (landmark_8_horizontal, landmark_8_vertical)))
                     prev_x, prev_y = landmark_8_horizontal, landmark_8_vertical
                 else:
                     prev_x, prev_y = None, None
 
-                if fingers_extended:
-                    if lines:
-                        lines.pop()
-                        canvas.fill(255)
-                        for line in lines:
-                            cv2.line(canvas, line[0], line[1], (0, 0, 0), 5)
+                if erasing_gesture:
+                    cv2.circle(canvas, (landmark_8_horizontal, landmark_8_vertical), 15, (255, 255, 255), -1)
+                    prev_x, prev_y = None, None
 
                 cv2.circle(frame, (landmark_8_horizontal, landmark_8_vertical), 5, (211, 211, 211), -1)
 
             else:
                 prev_x, prev_y = None, None
+                cursor_label.place(x=-20, y=-20)
 
             cv2.imshow("Frame", frame)
             
@@ -117,9 +126,8 @@ def save_image():
         img.save(file_path)
 
 def clear_canvas():
-    global canvas, lines
+    global canvas
     canvas = np.ones((height, width, 3), dtype="uint8") * 255
-    lines = []
 
 menu_frame = tk.Frame(root)
 menu_frame.pack(fill=tk.X)
